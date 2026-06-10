@@ -1,55 +1,71 @@
-"""
-Configuration management for AI-Agents framework.
-"""
+"""Pydantic-based configuration with environment variable loading."""
 
-import os
 from typing import Optional
-import logging
-from dotenv import load_dotenv
 
-# Load environment variables from .env file
-load_dotenv()
-
-logger = logging.getLogger(__name__)
+from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-class Config:
-    """Configuration class for AI-Agents."""
+class AgentConfig(BaseSettings):
+    """Framework configuration.
 
-    # LLM Configuration
-    OPENAI_API_KEY: Optional[str] = os.getenv("OPENAI_API_KEY")
-    LLM_MODEL: str = os.getenv("LLM_MODEL", "gpt-4")
+    All fields can be set via environment variables (case-insensitive) or a
+    `.env` file in the working directory.
 
-    # Agent Configuration
-    AGENT_LOG_LEVEL: str = os.getenv("AGENT_LOG_LEVEL", "INFO")
-    AGENT_MAX_ITERATIONS: int = int(os.getenv("AGENT_MAX_ITERATIONS", "10"))
-    AGENT_TIMEOUT: int = int(os.getenv("AGENT_TIMEOUT", "300"))
+    Example::
 
-    # Environment
-    ENVIRONMENT: str = os.getenv("ENVIRONMENT", "development")
-    DEBUG: bool = os.getenv("DEBUG", "false").lower() == "true"
+        # .env
+        ANTHROPIC_API_KEY=sk-ant-...
+        ANTHROPIC_MODEL=claude-sonnet-4-6
+    """
 
-    # Logging
-    LOG_FILE: str = os.getenv("LOG_FILE", "logs/agents.log")
-    LOG_FORMAT: str = os.getenv("LOG_FORMAT", "standard")
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="ignore",
+    )
 
-    @classmethod
-    def validate(cls) -> bool:
-        """Validate configuration."""
-        if not cls.OPENAI_API_KEY and cls.ENVIRONMENT == "production":
-            logger.warning("OPENAI_API_KEY not set in production environment")
-            return False
-        return True
+    # Anthropic
+    anthropic_api_key: Optional[str] = Field(None)
+    anthropic_model: str = Field("claude-sonnet-4-6")
 
-    @classmethod
-    def get_all(cls) -> dict:
-        """Get all configuration as dictionary."""
+    # OpenAI
+    openai_api_key: Optional[str] = Field(None)
+    openai_model: str = Field("gpt-4o")
+
+    # Generic OpenAI-compatible endpoint (Ollama, vLLM, LM Studio, etc.)
+    openai_compatible_url: Optional[str] = Field(None)
+    openai_compatible_model: Optional[str] = Field(None)
+    openai_compatible_api_key: Optional[str] = Field(None)
+
+    # Agent behaviour
+    max_iterations: int = Field(50)
+    agent_timeout: int = Field(300)
+
+    # General
+    environment: str = Field("development")
+    debug: bool = Field(False)
+    log_level: str = Field("INFO")
+
+    def validate_provider(self) -> bool:
+        """Return True if at least one provider is configured."""
+        return bool(
+            self.anthropic_api_key
+            or self.openai_api_key
+            or (self.openai_compatible_url and self.openai_compatible_model)
+        )
+
+    def summary(self) -> dict:
+        """Config dict safe for logging (API keys masked)."""
         return {
-            "openai_api_key": "***" if cls.OPENAI_API_KEY else None,
-            "llm_model": cls.LLM_MODEL,
-            "agent_log_level": cls.AGENT_LOG_LEVEL,
-            "agent_max_iterations": cls.AGENT_MAX_ITERATIONS,
-            "environment": cls.ENVIRONMENT,
-            "debug": cls.DEBUG,
+            "anthropic_api_key": "***" if self.anthropic_api_key else None,
+            "anthropic_model": self.anthropic_model,
+            "openai_api_key": "***" if self.openai_api_key else None,
+            "openai_model": self.openai_model,
+            "openai_compatible_url": self.openai_compatible_url,
+            "openai_compatible_model": self.openai_compatible_model,
+            "max_iterations": self.max_iterations,
+            "environment": self.environment,
+            "debug": self.debug,
         }
-
